@@ -131,8 +131,8 @@ object Pairing {
     suspend fun redeemCollaboratorLink(info: PairingInfo, keys: E2ECrypto.KeyPair, client: HttpClient): PairedDaemon =
         redeemCredential(info, keys, client, BindingRole.COLLABORATOR).also { upsertCollaborator(it) }
 
-    /** The relay this app pairs against (the daemon dials the same one). Override in Advanced if self-hosting. */
-    const val DEFAULT_RELAY = "wss://pocket.ark-nexus.cc"
+    /** The relay this self-hosted build uses for 6-digit pairing codes. */
+    const val DEFAULT_RELAY = "wss://nas.xiaocai218.top"
 
     /** Resolve a 6-digit code typed by the user into the full pairing info (relay-assisted path). */
     suspend fun resolveCode(code: String, client: HttpClient): PairingInfo {
