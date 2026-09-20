@@ -25,7 +25,8 @@
     },
     {
       "path": "mobile/composeApp/src/commonMain/kotlin/dev/ccpocket/app/pairing/Pairing.kt",
-      "sha256": "632eee241a0228974b759d1440f5290ebca6bf54bc469c582af4333468749693"
+      "sha256": "632eee241a0228974b759d1440f5290ebca6bf54bc469c582af4333468749693",
+      "note": "selfhost-relay: six-digit pairing defaults to wss://nas.xiaocai218.top"
     },
     {
       "path": "mobile/composeApp/src/commonMain/kotlin/dev/ccpocket/app/pairing/IncomingLink.kt",
