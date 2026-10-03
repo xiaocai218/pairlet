@@ -1,0 +1,39 @@
+name: build-android-selfhost
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+      - name: Build unsigned self-use APK
+        run: |
+          cp mobile/androidApp/google-services.json.template mobile/androidApp/google-services.json
+          ./gradlew --no-daemon :mobile:androidApp:assembleRelease
+          mkdir -p out
+          cp mobile/androidApp/build/outputs/apk/release/*-unsigned.apk out/cc-pocket-android-${{ inputs.version }}-selfhost.1-unsigned.apk
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cc-pocket-android-${{ inputs.version }}-selfhost
+          path: out/cc-pocket-android-${{ inputs.version }}-selfhost.1-unsigned.apk
+          if-no-files-found: error
+          retention-days: 14
