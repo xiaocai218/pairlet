@@ -35,7 +35,19 @@ object CodexLauncher {
         ExecutableResolver.resolve(explicit, envBin, exeNames, fallbackDirs, "codex executable not found. Install the Codex CLI, or set CC_POCKET_CODEX_BIN / pass --codex-bin.")
 
     /** argv for the persistent JSON-RPC server. cwd / model / approval / sandbox are set per thread+turn, not here. */
-    fun buildArgs(): List<String> = listOf("app-server")
+    fun buildArgs(stableMode: Boolean = System.getenv("CC_POCKET_CODEX_STABLE_MODE") == "1"): List<String> = buildList {
+        add("app-server")
+        if (stableMode) {
+            for (feature in listOf("multi_agent", "multi_agent_v2")) {
+                add("--disable")
+                add(feature)
+            }
+            for (feature in listOf("shell_tool", "unified_exec")) {
+                add("--enable")
+                add(feature)
+            }
+        }
+    }
 
     fun processBuilder(exe: Path, spec: AgentSpec): ProcessBuilder = processBuilder(exe, spec.workdir.toFile())
 

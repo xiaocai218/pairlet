@@ -1,0 +1,56 @@
+diff --git a/daemon/src/main/kotlin/dev/ccpocket/daemon/codex/CodexLauncher.kt b/daemon/src/main/kotlin/dev/ccpocket/daemon/codex/CodexLauncher.kt
+index 436bd850..cda250a9 100644
+--- a/daemon/src/main/kotlin/dev/ccpocket/daemon/codex/CodexLauncher.kt
++++ b/daemon/src/main/kotlin/dev/ccpocket/daemon/codex/CodexLauncher.kt
+@@ -35,7 +35,19 @@ object CodexLauncher {
+         ExecutableResolver.resolve(explicit, envBin, exeNames, fallbackDirs, "codex executable not found. Install the Codex CLI, or set CC_POCKET_CODEX_BIN / pass --codex-bin.")
+ 
+     /** argv for the persistent JSON-RPC server. cwd / model / approval / sandbox are set per thread+turn, not here. */
+-    fun buildArgs(): List<String> = listOf("app-server")
++    fun buildArgs(stableMode: Boolean = System.getenv("CC_POCKET_CODEX_STABLE_MODE") == "1"): List<String> = buildList {
++        add("app-server")
++        if (stableMode) {
++            for (feature in listOf("multi_agent", "multi_agent_v2")) {
++                add("--disable")
++                add(feature)
++            }
++            for (feature in listOf("shell_tool", "unified_exec")) {
++                add("--enable")
++                add(feature)
++            }
++        }
++    }
+ 
+     fun processBuilder(exe: Path, spec: AgentSpec): ProcessBuilder = processBuilder(exe, spec.workdir.toFile())
+ 
+diff --git a/daemon/src/test/kotlin/dev/ccpocket/daemon/codex/CodexLauncherTest.kt b/daemon/src/test/kotlin/dev/ccpocket/daemon/codex/CodexLauncherTest.kt
+new file mode 100644
+index 00000000..9de2b8a9
+--- /dev/null
++++ b/daemon/src/test/kotlin/dev/ccpocket/daemon/codex/CodexLauncherTest.kt
+@@ -0,0 +1,25 @@
++package dev.ccpocket.daemon.codex
++
++import kotlin.test.Test
++import kotlin.test.assertEquals
++
++class CodexLauncherTest {
++    @Test
++    fun normalModeUsesTheOriginalServerCommand() {
++        assertEquals(listOf("app-server"), CodexLauncher.buildArgs(stableMode = false))
++    }
++
++    @Test
++    fun stableModeDisablesDelegationWithoutDisablingTheRequiredExecutionHost() {
++        assertEquals(
++            listOf(
++                "app-server",
++                "--disable", "multi_agent",
++                "--disable", "multi_agent_v2",
++                "--enable", "shell_tool",
++                "--enable", "unified_exec",
++            ),
++            CodexLauncher.buildArgs(stableMode = true),
++        )
++    }
++}

@@ -141,10 +141,10 @@ def check_thread_scope_schema(cwd):
 class Server:
     """一个 `codex app-server` 子进程，读线程把「按 id 的应答」和「通知」拆开。"""
 
-    def __init__(self, cwd, log):
+    def __init__(self, cwd, log, args=None):
         self.log = log
         self.proc = subprocess.Popen(
-            [CODEX, "app-server"], cwd=cwd,
+            [CODEX, "app-server", *(args or [])], cwd=cwd,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding="utf-8", errors="replace", bufsize=1,
         )

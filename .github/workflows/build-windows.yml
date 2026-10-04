@@ -102,6 +102,10 @@ jobs:
           find mobile/composeApp/build/compose/binaries -name "*.msi" -exec cp {} "out/cc-pocket-desktop-${{ inputs.version }}-windows.msi" \; || true
           ls -la out
 
+      - name: Record verified self-use MSI provenance
+        shell: pwsh
+        run: ./scripts/record-windows-provenance.ps1 -Version '${{ inputs.version }}'
+
       - name: Upload desktop app artifacts
         uses: actions/upload-artifact@v7
         with:
