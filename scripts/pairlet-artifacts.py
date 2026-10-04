@@ -147,7 +147,7 @@ def publish(path, expected):
     remote("test -d " + shlex.quote(REMOTE))
     key = Path.home() / "pem/nas.pem"
     result = subprocess.run(["scp", "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-i", str(key),
-                             str(path), NAS + ":" + shlex.quote(temporary)], capture_output=True, timeout=600)
+                             str(path), NAS + ":" + temporary], capture_output=True, timeout=600)
     if result.returncode:
         raise RuntimeError("NAS upload failed; partial file retained")
     quoted = shlex.quote(temporary)

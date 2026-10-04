@@ -10,6 +10,8 @@ import subprocess
 import sys
 import time
 import zipfile
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import pairlet_stack
 
 
 SERVICE = "cc-pocket-daemon.service"
@@ -133,7 +135,7 @@ class Updater:
         atomic_json(directory / "validated.json", dict(version=target))
         return candidate
 
-    def promote(self, candidate, state):
+    def promote(self, candidate, state, stack=None):
         if self.journal.exists():
             raise RuntimeError("An interrupted upgrade requires --rollback first")
         if version(candidate / "bin/codex.js") != candidate.parent.parent.parent.name:
@@ -143,16 +145,35 @@ class Updater:
         record = dict(backup=str(backup), oldVersion=state["version"],
                       managedRunning=state["managed"].get("status") == "running",
                       pairletRunning=bool(state["pairletPid"]))
+        if stack:
+            pairlet_stack.validate(stack)
+            if candidate.resolve() != Path(stack["codex"]).resolve() or version(candidate / "bin/codex.js") != stack["codexVersion"]:
+                raise RuntimeError("Stack Codex version/path mismatch")
+            fragment = Path(run("systemctl", "--user", "show", SERVICE, "-p", "FragmentPath", "--value"))
+            dropin = self.home / ".config/systemd/user" / (SERVICE + ".d") / pairlet_stack.DROPIN
+            existing = dropin.read_text() if dropin.exists() else None
+            effective = existing if existing else fragment.read_text()
+            override = pairlet_stack.unit_override(effective, Path(state["pairletInstallation"]), Path(stack["daemon"]))
+            record.update(dropin=str(dropin), previousDropin=existing, targetDropin=override,
+                          oldPairlet=state["pairletInstallation"])
+            rollback_directory = self.root / "backups" / backup.name
+            rollback_directory.mkdir(parents=True, mode=0o700)
+            pairlet_stack.atomic_text(rollback_directory / "service.conf", fragment.read_text())
         atomic_json(self.journal, record)
         try:
             if record["pairletRunning"]:
                 run("systemctl", "--user", "stop", SERVICE)
             self.idle(dict(state, pairletPid=0))
+            if stack:
+                pairlet_stack.backup_state(self.home, rollback_directory / "paired-state")
             if record["managedRunning"]:
                 run(str(self.cli), "app-server", "daemon", "stop")
             os.rename(self.package, backup)
             self.package.symlink_to(candidate, target_is_directory=True)
             run(str(self.cli), "app-server", "daemon", "update", "--from-cli", "--yes")
+            if stack:
+                pairlet_stack.atomic_text(Path(record["dropin"]), record["targetDropin"])
+                run("systemctl", "--user", "daemon-reload")
             if record["managedRunning"]:
                 run(str(self.cli), "app-server", "daemon", "start")
             else:
@@ -164,9 +185,11 @@ class Updater:
                 raise RuntimeError("Post-switch version check failed")
             if record["pairletRunning"] and not updated["pairletPid"]:
                 raise RuntimeError("Pairlet did not restart")
-            atomic_json(self.root / "last-good.json", dict(updated, backup=str(backup)))
+            if stack and updated["pairletInstallation"] != stack["daemon"]:
+                raise RuntimeError("Pairlet installation differs from selected stack")
+            atomic_json(self.root / "last-good.json", dict(updated, backup=str(backup), previous=record))
             self.journal.unlink()
-            print(f"Upgraded Codex and managed app-server to {updated['version']}; Pairlet patch retained")
+            print(f"Local runtime switched to Codex {updated['version']}; client reconnect/terminal/resume validation remains required")
         except BaseException:
             self.rollback()
             raise
@@ -174,6 +197,16 @@ class Updater:
     def rollback(self):
         record = json.loads(self.journal.read_text())
         backup = Path(record["backup"])
+        if "dropin" in record:
+            run("systemctl", "--user", "stop", SERVICE)
+            dropin = Path(record["dropin"])
+            if dropin.exists() and dropin.read_text() not in (record["targetDropin"], record["previousDropin"]):
+                raise RuntimeError("Service override changed externally; refusing overwrite")
+            if record["previousDropin"] is None:
+                dropin.unlink(missing_ok=True)
+            else:
+                pairlet_stack.atomic_text(dropin, record["previousDropin"])
+            run("systemctl", "--user", "daemon-reload")
         if backup.exists():
             run("systemctl", "--user", "stop", SERVICE)
             rollback_cli = self.cli if self.cli.exists() else backup / "bin/codex.js"
@@ -192,8 +225,25 @@ class Updater:
             run("systemctl", "--user", "start", SERVICE)
         if self.status()["version"] != record["oldVersion"]:
             raise RuntimeError("Rollback verification failed; pending journal retained")
+        if "oldPairlet" in record and self.status()["pairletInstallation"] != record["oldPairlet"]:
+            raise RuntimeError("Pairlet rollback mismatch; pending journal retained")
         self.journal.unlink()
         print("Previous runtime restored")
+
+    def rollback_last(self):
+        if self.journal.exists():
+            raise RuntimeError("Interrupted upgrade: use --rollback first")
+        last = json.loads((self.root / "last-good.json").read_text())
+        record = last["previous"]
+        state = self.status()
+        if state["version"] != last["version"] or state["pairletInstallation"] != last["pairletInstallation"]:
+            raise RuntimeError("Runtime changed since successful upgrade")
+        if not Path(record["backup"]).exists():
+            raise RuntimeError("Previous package backup missing")
+        self.idle(state)
+        atomic_json(self.journal, record)
+        self.rollback()
+        (self.root / "last-good.json").rename(self.root / f"rolled-back-{time.time_ns()}.json")
 
 
 def main():
@@ -204,8 +254,14 @@ def main():
     mode.add_argument("--prepare-only", action="store_true")
     mode.add_argument("--prepare-stack", action="store_true")
     mode.add_argument("--rollback", action="store_true")
+    mode.add_argument("--rollback-last", action="store_true")
+    mode.add_argument("--apply-stack", type=Path)
+    mode.add_argument("--assemble-stack", action="store_true")
     parser.add_argument("--version", type=validate_version)
     parser.add_argument("--pairlet-ref", default="main")
+    parser.add_argument("--codex-candidate", type=Path)
+    parser.add_argument("--pairlet-candidate", type=Path)
+    parser.add_argument("--clients", type=Path)
     args = parser.parse_args()
     updater = Updater(Path.home())
     if args.check:
@@ -216,6 +272,18 @@ def main():
     updater.root.mkdir(parents=True, exist_ok=True, mode=0o700)
     with (updater.root / "upgrade.lock").open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if args.assemble_stack:
+            if not all((args.codex_candidate, args.pairlet_candidate, args.clients)):
+                raise ValueError("Assembly requires --codex-candidate --pairlet-candidate --clients")
+            print(pairlet_stack.assemble(Path.home(), args.codex_candidate, args.pairlet_candidate, args.clients))
+            return
+        if args.rollback_last:
+            updater.rollback_last()
+            return
+        if args.apply_stack:
+            stack = json.loads(args.apply_stack.read_text())
+            updater.promote(Path(stack["codex"]), updater.status(), stack=stack)
+            return
         if args.rollback:
             record = json.loads(updater.journal.read_text())
             binary = updater.cli if updater.cli.exists() else Path(record["backup"]) / "bin/codex.js"

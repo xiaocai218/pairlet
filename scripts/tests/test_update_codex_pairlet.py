@@ -62,6 +62,58 @@ class UpdateTests(unittest.TestCase):
             self.assertEqual(updater.run("test-command", timeout=2100), "ok")
         self.assertEqual(process.call_args.kwargs["timeout"], 2100)
 
+    def test_successful_upgrade_can_be_rolled_back_later(self):
+        old = dict(self.state, managed=dict(status="stopped"), pairletInstallation="/old/pairlet")
+        updated = dict(old, version="0.161.0")
+        with patch.object(updater, "version", return_value="0.161.0"), \
+                patch.object(updater, "run", return_value=""), \
+                patch.object(self.instance, "idle"), \
+                patch.object(self.instance, "status", return_value=updated):
+            self.instance.promote(self.candidate, old)
+        with patch.object(updater, "run", return_value=""), \
+                patch.object(self.instance, "idle"), \
+                patch.object(self.instance, "status", side_effect=[updated, old]):
+            self.instance.rollback_last()
+        self.assertTrue((self.instance.package / "original").exists())
+        self.assertFalse((self.instance.root / "last-good.json").exists())
+        self.assertFalse(self.instance.journal.exists())
+
+    def test_rollback_last_blocks_external_runtime_change(self):
+        updater.atomic_json(self.instance.root / "last-good.json",
+                            dict(version="0.161.0", pairletInstallation="/expected", previous={}))
+        with patch.object(self.instance, "status", return_value=dict(self.state, pairletInstallation="/other")):
+            with self.assertRaisesRegex(RuntimeError, "changed"):
+                self.instance.rollback_last()
+        self.assertFalse(self.instance.journal.exists())
+
+    def test_stack_failure_restores_daemon_override(self):
+        old = dict(self.state, pairletInstallation="/old/pairlet")
+        fragment = self.home / "cc-pocket-daemon.service"
+        fragment.write_text("[Service]\nExecStart=/old/pairlet/bin/cc-pocket-daemon run --relay wss://nas.xiaocai218.top\n")
+        stack = dict(codex=str(self.candidate), codexVersion="0.161.0", daemon="/new/pairlet")
+        failures = [True]
+
+        def command(*arguments, **kwargs):
+            if "FragmentPath" in arguments:
+                return str(fragment)
+            if "start" in arguments and updater.SERVICE in arguments and failures:
+                failures.pop()
+                raise RuntimeError("new daemon failed")
+            return ""
+
+        with patch.object(updater, "version", return_value="0.161.0"), \
+                patch.object(updater, "run", side_effect=command), \
+                patch.object(self.instance, "idle"), \
+                patch.object(self.instance, "status", return_value=old), \
+                patch.object(updater.pairlet_stack, "validate"), \
+                patch.object(updater.pairlet_stack, "backup_state"):
+            with self.assertRaisesRegex(RuntimeError, "new daemon failed"):
+                self.instance.promote(self.candidate, old, stack)
+        override = self.home / ".config/systemd/user" / (updater.SERVICE + ".d") / updater.pairlet_stack.DROPIN
+        self.assertFalse(override.exists())
+        self.assertTrue((self.instance.package / "original").exists())
+        self.assertFalse(self.instance.journal.exists())
+
     def test_journal_written_with_private_permissions(self):
         updater.atomic_json(self.instance.journal, dict(phase="prepared"))
         self.assertEqual(json.loads(self.instance.journal.read_text()), dict(phase="prepared"))

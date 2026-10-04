@@ -10,7 +10,8 @@ import time
 
 
 FILES = ("update-codex-pairlet.py", "probe-codex-wire.py", "probe-codex-stable.py",
-         "prepare-pairlet-candidate.py", "patches/selfhost-relay.patch", "patches/codex-stable.patch")
+         "prepare-pairlet-candidate.py", "pairlet_stack.py", "pairlet-artifacts.py",
+         "patches/selfhost-relay.patch", "patches/codex-stable.patch")
 LAUNCHER = "update-codex-pairlet-launcher.py"
 
 

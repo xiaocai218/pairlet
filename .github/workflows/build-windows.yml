@@ -72,6 +72,10 @@ jobs:
         run: |
           grep -v 'org.gradle.java.home' gradle.properties > gradle.properties.tmp && mv gradle.properties.tmp gradle.properties
 
+      - name: Test MSI provenance and rejection gates
+        shell: pwsh
+        run: ./scripts/test-record-windows-provenance.ps1
+
       - name: Build desktop app — portable zip (+ MSI if WiX is available)
         shell: bash
         run: |
