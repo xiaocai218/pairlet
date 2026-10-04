@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 
 SPEC = importlib.util.spec_from_file_location("stack", Path(__file__).resolve().parents[1] / "pairlet_stack.py")
@@ -54,7 +55,7 @@ class StackTests(unittest.TestCase):
 
     def test_changed_staged_runtime_rejected(self):
         record = dict(schema=1, state="ready-for-local-switch", codex=str(self.runtime), daemon=str(self.runtime),
-                      codexSha256=stack.tree_digest(self.runtime), daemonSha256=stack.tree_digest(self.runtime))
+                      codexSha256=stack.tree_digest(self.runtime.parent), daemonSha256=stack.tree_digest(self.runtime))
         stack.validate(record)
         (self.runtime / "file").write_text("tampered")
         with self.assertRaisesRegex(RuntimeError, "changed"):
@@ -68,6 +69,53 @@ class StackTests(unittest.TestCase):
         clients.write_text(json.dumps(dict(version="2.2.0")))
         with self.assertRaisesRegex(RuntimeError, "Verified NAS delivery"):
             stack.assemble(self.home, self.runtime, candidate, clients)
+
+    def assembled_fixture(self, windows_commit="a" * 40):
+        candidate = self.home / "candidate"
+        distribution = candidate / "source/daemon/build/install/cc-pocket-daemon"
+        (distribution / "lib").mkdir(parents=True)
+        jar = distribution / "lib/daemon-2.2.0.jar"
+        jar.write_bytes(b"daemon fixture")
+        (candidate / "candidate.json").write_text(json.dumps(dict(
+            state="daemon-built", sourceCommit="a" * 40, daemonSha256=stack.digest(jar))))
+        codex = self.home / "versions/0.160.0/node_modules/@openai/codex"
+        codex.mkdir(parents=True)
+        (codex / "binary").write_bytes(b"codex fixture")
+        native = codex.parent / "codex-linux-x64"
+        native.mkdir()
+        (native / "codex").write_bytes(b"native fixture")
+        (codex.parent.parent.parent / "validated.json").write_text(json.dumps(dict(version="0.160.0")))
+        clients = dict(version="2.2.0")
+        for platform in ("android", "windows"):
+            artifact = self.home / (platform + ".package")
+            artifact.write_bytes(platform.encode())
+            item = dict(file=artifact.name, version="2.2.0", size=artifact.stat().st_size,
+                        sha256=stack.digest(artifact), sourceCommit=windows_commit)
+            item["delivery"] = dict(verified=True, sha256=item["sha256"], size=item["size"])
+            clients[platform] = item
+        manifest = self.home / "clients.json"
+        manifest.write_text(json.dumps(clients))
+        return codex, candidate, manifest
+
+    def test_assembly_stages_verified_runtime_without_switching(self):
+        codex, candidate, clients = self.assembled_fixture()
+        with mock.patch.object(stack.subprocess, "run", side_effect=[
+                mock.Mock(stdout=""), mock.Mock(stdout="a" * 40)]):
+            path = stack.assemble(self.home, codex, candidate, clients)
+        record = json.loads(path.read_text())
+        stack.validate(record)
+        self.assertEqual(record["state"], "ready-for-local-switch")
+        self.assertEqual(record["clientInstallation"], "not-verified")
+        self.assertNotEqual(Path(record["daemon"]), candidate / "source/daemon/build/install/cc-pocket-daemon")
+        (codex.parent / "codex-linux-x64/codex").write_bytes(b"modified native fixture")
+        with self.assertRaisesRegex(RuntimeError, "Staged Codex changed"):
+            stack.validate(record)
+
+    def test_mismatched_client_commit_rejected_before_staging(self):
+        codex, candidate, clients = self.assembled_fixture("b" * 40)
+        with self.assertRaisesRegex(RuntimeError, "same commit"):
+            stack.assemble(self.home, codex, candidate, clients)
+        self.assertFalse((self.home / ".local/opt/codex-pairlet/runtimes").exists())
 
 
 if __name__ == "__main__":

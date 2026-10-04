@@ -73,3 +73,14 @@ update-codex-pairlet --check
 - 额度接口只验证方法存在，当前认证方式返回 `chatgpt authentication required`；没有验证 ChatGPT 额度字段或客户端额度显示。
 - 当前存在多个 Codex 进程，托管 app-server 仍运行，因此没有停止当前会话或进行正式服务切换。Pairlet PID 保持不变，重启次数为 0。
 - 正式升级与回滚演练、升级后手机端连接／终端执行／恢复验收尚未完成；候选验证和模拟回滚测试不能代替这些验收。
+
+### 同日隔离构建与交付
+
+- 构建分支 `selfhost-stack-20261004` 的不可变提交为 `4310ad2ad891db6b2901f565e24a0206af792550`；Windows Actions run `37201371994` 成功。六处原工作区 UI 修改未包含在隔离提交中，原分支未覆盖。
+- MSI 元数据读取在 PowerShell 7 下失败；改用原生 Windows PowerShell、显式 COM 属性读取与对象释放后，真实 MSI 及版本不匹配拒绝测试通过。临时夹具清理错误不再遮住原始异常。
+- NAS `/share/CACHEDEV1_DATA/Public/CC app/cc-pocket-desktop-2.2.0-windows.msi`：189140992 字节，SHA-256 `7d2211929eab05b5bcbbd6aa301e828f7e8705a263cc609ef8d0c77abe3d28a3`，自用未签名安装包，不是正式 Release。
+- NAS `/share/CACHEDEV1_DATA/Public/CC app/cc-pocket-android-2.2.0-official.apk`：46698313 字节，SHA-256 `9c6d57868a87b33ab2a7b7894225bd2b8920bf5a57065d01ffe194f90e655759`，官方 v2.2.0 原文件。两份交付均验证远端大小与哈希，旧安装包保留。
+- 同提交 daemon 候选 `pairlet-8ku3owkb` 构建成功，137 项后端测试通过，二进制报告 2.2.0。Codex 0.160.0 实际终端、中断、两次跨进程恢复探针通过。
+- 41 项维护工具测试通过；组合哈希包含 Codex 相邻平台包中的原生二进制，不仅是 JS 入口。维护工具补充提交与已验证的客户端构建提交分开保存。
+- 实际组合清单：`~/.local/opt/codex-pairlet/stacks/113258dc87959789394a.json`，状态 `ready-for-local-switch`。本机 runtime 副本已校验；客户端安装和手机工作流仍标记未验证。
+- 工具内容版本 `42630eb8deebc5106bbf` 已安装。正式服务 PID 1961738、重启次数 0，CLI／托管／运行 app-server 均为 0.160.0。未执行正式切换或回滚演练，默认命令仍不是全栈一键升级。

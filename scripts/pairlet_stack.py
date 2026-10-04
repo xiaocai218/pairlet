@@ -76,7 +76,7 @@ def assemble(home, codex, pairlet_candidate, clients_file):
     validated = codex.parent.parent.parent / "validated.json"
     validation = json.loads(validated.read_text())
     record = dict(schema=1, state="ready-for-local-switch", codex=str(codex.resolve()),
-                  codexVersion=validation["version"], codexSha256=tree_digest(codex),
+                  codexVersion=validation["version"], codexSha256=tree_digest(codex.parent),
                   daemon=str(installed), daemonSha256=daemon_hash, pairletVersion=clients["version"],
                   sourceCommit=head, clients=clients, clientInstallation="not-verified",
                   mobileWorkflow="not-verified")
@@ -89,7 +89,7 @@ def assemble(home, codex, pairlet_candidate, clients_file):
 def validate(record):
     if record.get("schema") != 1 or record.get("state") != "ready-for-local-switch":
         raise RuntimeError("Unknown stack state")
-    if tree_digest(Path(record["codex"])) != record["codexSha256"]:
+    if tree_digest(Path(record["codex"]).parent) != record["codexSha256"]:
         raise RuntimeError("Staged Codex changed")
     if tree_digest(Path(record["daemon"])) != record["daemonSha256"]:
         raise RuntimeError("Staged daemon changed")
