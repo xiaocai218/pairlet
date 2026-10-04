@@ -16,9 +16,13 @@ try {
         $view = $database.OpenView($sql)
         [void]$view.Execute()
         [void]$view.Close()
+        [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($view)
     }
     [void]$database.Commit()
     [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($database)
+    $database = $null
+    [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($installer)
+    $installer = $null
     $env:GITHUB_SHA = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
     $env:GITHUB_RUN_ID = '123'
     & (Join-Path $PSScriptRoot 'record-windows-provenance.ps1') -Version '2.2.0' -MsiDirectory $root
@@ -34,5 +38,7 @@ try {
 } finally {
     $env:GITHUB_SHA = $originalSha
     $env:GITHUB_RUN_ID = $originalRun
-    Remove-Item $root -Recurse -Force
+    if ($null -ne $database) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($database) }
+    if ($null -ne $installer) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($installer) }
+    Remove-Item $root -Recurse -Force -ErrorAction Continue
 }

@@ -32,7 +32,25 @@ update-codex-pairlet --prepare-stack --pairlet-ref main
 
 该模式先准备并测试 Codex，再从原版上游独立获取指定 Pairlet ref，记录不可变提交，依次重放自托管 relay 与 stable-mode 补丁；补丁已存在则跳过，冲突则停止。它不依赖或覆盖原工作区的未提交改动，不创建分支、不提交、不推送。通过自托管配对文件哈希及品牌兼容检查后，以 JDK 17 执行 Codex 后端测试和 daemon installDist。源码、日志、提交和补丁／daemon 哈希位于 `~/.local/opt/codex-pairlet/candidates/`，失败目录也保留。
 
-维护工具包包含独立补丁文件。默认 `main` 是准备时的上游快照，不保证对应已发布客户端；正式发行应指定匹配的发布 tag。该模式不会构建 Windows MSI、下载 Android APK、发布到 NAS 或切换服务；候选状态标记客户端未构建。全套交付、组合版本清单、整套切换和成功后的整套回滚仍未实现，不能将默认命令描述为全栈自动升级。
+维护工具包包含独立补丁文件。默认 `main` 是准备时的上游快照，不保证对应已发布客户端；正式发行应指定匹配的发布 tag。该模式不会构建 Windows MSI、下载 Android APK、发布到 NAS 或切换服务；候选状态标记客户端未构建。客户端收集交付、组合版本清单、本机整套切换和成功后回滚已有独立入口，但尚未串成默认命令的全自动流程，不能将默认命令描述为全栈自动升级。
+
+### 客户端交付与本机组合切换
+
+Windows Actions 必须从已提交的隔离自托管源码构建。`stage-pairlet-build.py` 只复制升级文件到候选，不自动提交或推送，避免包含原工作区的 UI 修改。正式 MSI 必须通过原生 Windows Installer 版本与 UpgradeCode 核对，并附提交、run id、大小和 SHA-256 清单；不能把只有 ZIP 的成功 job 当作 MSI 交付。
+
+```bash
+python3 scripts/pairlet-artifacts.py --version 2.2.0 --directory ~/tmp/pairlet-stack-delivery/2.2.0 --run-id RUN_ID --commit FULL_SHA --publish
+update-codex-pairlet --assemble-stack --codex-candidate CODEX_PACKAGE --pairlet-candidate PAIRLET_CANDIDATE --clients CLIENTS_JSON
+codex app-server daemon stop
+update-codex-pairlet --apply-stack STACK_JSON
+update-codex-pairlet --rollback-last
+```
+
+占位参数需替换为已验证路径与不可变提交。MSI 与 daemon 必须同提交；官方 Android APK 必须同版本但保持原字节。NAS 交付核对远端哈希和大小，不覆盖不同的既有文件，不删除旧安装包。组合清单生成不可变本机 runtime 副本与内容哈希，并不重启服务。
+
+`--apply-stack` 需最终切换批准，并在所有 Agent 会话退出后从普通终端执行。它再次核对内容、空闲状态，备份 unit 与配对状态，使用独立 drop-in 保留 relay 和命令参数；失败尝试恢复旧 Codex、托管版本和 daemon 路径。`--rollback-last` 可在成功切换后恢复上一套本机 runtime；它不自动降级手机／Windows 已安装客户端，也不自动覆盖运行后产生的配对状态。外部修改或活动进程会阻止回滚。
+
+NAS 文件存在不代表客户端已经安装；本机切换成功不代表手机端终端、重连或恢复已验收。当前不包含客户端自动安装、未来补丁冲突的自动解决，或一次命令全流程编排。
 
 维护工具独立安装到 `~/.local/opt/codex-pairlet/tools/releases/<内容哈希>/`，`tools/current` 指向当前工具包。`~/bin/update-codex-pairlet` 不再依赖源码或临时目录；工具包同时包含升级脚本、wire 探针及稳定模式探针。安装生成 SHA-256 清单并校验，不升级任何服务；旧入口保留在工具目录的 `launcher.backup-*`。
 
