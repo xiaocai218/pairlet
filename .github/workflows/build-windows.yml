@@ -72,6 +72,10 @@ jobs:
         run: |
           grep -v 'org.gradle.java.home' gradle.properties > gradle.properties.tmp && mv gradle.properties.tmp gradle.properties
 
+      - name: Test MSI provenance and rejection gates
+        shell: powershell
+        run: ./scripts/test-record-windows-provenance.ps1
+
       - name: Build desktop app — portable zip (+ MSI if WiX is available)
         shell: bash
         run: |
@@ -101,6 +105,10 @@ jobs:
           fi
           find mobile/composeApp/build/compose/binaries -name "*.msi" -exec cp {} "out/cc-pocket-desktop-${{ inputs.version }}-windows.msi" \; || true
           ls -la out
+
+      - name: Record verified self-use MSI provenance
+        shell: powershell
+        run: ./scripts/record-windows-provenance.ps1 -Version '${{ inputs.version }}'
 
       - name: Upload desktop app artifacts
         uses: actions/upload-artifact@v7
